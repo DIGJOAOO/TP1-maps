@@ -13,7 +13,6 @@ logo_maps = pygame.image.load("assets/images/maps_logo.png").convert_alpha()
 logo = pygame.image.load("assets/images/logo.png").convert_alpha()
 
 font = pygame.font.SysFont("ThisAppeal-FreeDemo", 40)
-
 background_color = (128, 128, 128)
 
 maps_button = pygame.Rect(375, 400, 200, 50)
@@ -84,13 +83,6 @@ while True:
                 if event.key == pygame.K_ESCAPE:
                     estado = "menu"
 
-            if event.type == pygame.MOUSEWHEEL:
-                if event.y > 0:
-                    zoom *= 1.1
-                else:
-                    zoom *= 0.9
-                zoom = max(MIN_ZOOM, min(MAX_ZOOM, zoom))
-
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     dragging = True
@@ -99,6 +91,13 @@ while True:
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     dragging = False
+
+            if event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    zoom *= 1.1
+                else:
+                    zoom *= 0.9
+                zoom = max(MIN_ZOOM, min(MAX_ZOOM, zoom))
 
             if event.type == pygame.MOUSEMOTION and dragging:
                 dx = event.pos[0] - last_mouse[0]
@@ -137,6 +136,7 @@ while True:
         draw_button(api_button, "API")
         draw_button(exit_button, "Exit")
         draw_button(basket_button, "?")
+
         screen.blit(logo, (-50, -300))
 
     elif estado == "mapa":

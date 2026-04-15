@@ -25,3 +25,10 @@ ahora se pueden ver los terremotos en el mapa
 costo un monton y se ve feo
 voy a seguir trabajando la UI
 me di un gustito (?)
+//
+Malvasio nos dejo codear en su hora
+arregle el codigo porque programe parte del mapa en el menu
+me falta un  buscador y los oceanos para terminar el mapa
+intente armar un buscador en el mapa para los paises
+ahora no anda al menu
+no se q tenia q ver
