@@ -1,7 +1,16 @@
-from maps import cargar_mapa, dibujar_mapa, limites_mapa, obtener_terremotos
 import pygame
 import sys
 import webbrowser
+from gitAPI import main
+
+from maps import (
+    cargar_mapa, 
+    preprocesar_mapa, 
+    dibujar_mapa, 
+    limites_mapa, 
+    iniciar_descarga_terremotos, 
+    get_terremotos
+)
 
 pygame.init()
 
@@ -11,8 +20,13 @@ pygame.display.set_caption("Maps")
 logo_git = pygame.image.load("assets/images/github_logo.png").convert_alpha()
 logo_maps = pygame.image.load("assets/images/maps_logo.png").convert_alpha()
 logo = pygame.image.load("assets/images/logo.png").convert_alpha()
+esc_logo = pygame.image.load("assets/images/esc_button.png").convert_alpha()
 
-font = pygame.font.SysFont("ThisAppeal-FreeDemo", 40)
+try:
+    font = pygame.font.SysFont("ThisAppeal-FreeDemo", 40)
+except:
+    font = pygame.font.SysFont("ThisAppeal-FreeDemo", 40)
+
 background_color = (128, 128, 128)
 
 maps_button = pygame.Rect(375, 400, 200, 50)
@@ -22,7 +36,10 @@ basket_button = pygame.Rect(5, 5, 50, 50)
 
 estado = "menu"
 
-data = cargar_mapa()
+
+data_cruda = cargar_mapa()
+mapa_precalculado = preprocesar_mapa(data_cruda)
+iniciar_descarga_terremotos() 
 
 zoom = 1
 MIN_ZOOM = 0.8
@@ -47,7 +64,6 @@ def recolor_iconos(image, color):
 
 icono_maps = recolor_iconos(logo_maps, (120, 120, 120))
 icono_git = recolor_iconos(logo_git, (120, 120, 120))
-
 icono_maps = pygame.transform.smoothscale(icono_maps, (100, 100))
 icono_git = pygame.transform.smoothscale(icono_git, (100, 100))
 
@@ -71,7 +87,7 @@ while True:
                 if maps_button.collidepoint(event.pos):
                     estado = "mapa"
                 elif api_button.collidepoint(event.pos):
-                    print("API")
+                    estado = "api"
                 elif basket_button.collidepoint(event.pos):
                     webbrowser.open("https://poki.com/es/g/basketball-stars")
                 elif exit_button.collidepoint(event.pos):
@@ -98,6 +114,10 @@ while True:
                 else:
                     zoom *= 0.9
                 zoom = max(MIN_ZOOM, min(MAX_ZOOM, zoom))
+                
+                min_x, max_x, min_y, max_y = limites_mapa(screen, mapa_precalculado, zoom)
+                offset_x = max(min_x, min(max_x, offset_x))
+                offset_y = max(min_y, min(max_y, offset_y))
 
             if event.type == pygame.MOUSEMOTION and dragging:
                 dx = event.pos[0] - last_mouse[0]
@@ -106,7 +126,7 @@ while True:
                 offset_x += dx
                 offset_y += dy
 
-                min_x, max_x, min_y, max_y = limites_mapa(screen, data, zoom)
+                min_x, max_x, min_y, max_y = limites_mapa(screen, mapa_precalculado, zoom)
 
                 offset_x = max(min_x, min(max_x, offset_x))
                 offset_y = max(min_y, min(max_y, offset_y))
@@ -140,8 +160,11 @@ while True:
         screen.blit(logo, (-50, -300))
 
     elif estado == "mapa":
-        terremotos = obtener_terremotos()
-        dibujar_mapa(screen, data, zoom, offset_x, offset_y, terremotos)
+        terremotos = get_terremotos()
+        
+        dibujar_mapa(screen, mapa_precalculado, zoom, offset_x, offset_y, terremotos)
 
+    elif estado == "api":
+        main()
     pygame.display.flip()
-    clock.tick(60)
+    clock.tick(60) 

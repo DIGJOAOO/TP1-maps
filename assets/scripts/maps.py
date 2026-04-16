@@ -1,315 +1,233 @@
 import json
 import pygame
 import requests
-
-pygame.init()
+import threading
+from functools import lru_cache
 
 screen = pygame.display.set_mode((1366, 768))
-pygame.display.set_caption("Maps")
 
-clock = pygame.time.Clock()
+esc_logo = pygame.image.load("assets/images/esc_button.png").convert_alpha()
 
+screen.blit(esc_logo,(100, 100))
 def cargar_mapa(ruta_geojson="assets/json/countries.geojson"):
     with open(ruta_geojson, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def obtener_terremotos():
     url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
-    return requests.get(url).json()["features"]
+    try:
+        return requests.get(url, timeout=10).json()["features"]
+    except Exception:
+        return []
 
-
-def buscar_pais(data, nombre):
-    nombre = nombre.lower()
-    for feature in data["features"]:
-        if nombre in feature["properties"].get("name", "").lower():
-            return feature
-    return None
-
-def centro_pais(feature):
-    geom = feature["geometry"]
-    coords = geom["coordinates"]
-    puntos = []
-
-    if geom["type"] == "Polygon":
-        for ring in coords:
-            for lon, lat in ring:
-                puntos.append((lon, lat))
-
-    elif geom["type"] == "MultiPolygon":
-        for polygon in coords:
-            for ring in polygon:
-                for lon, lat in ring:
-                    puntos.append((lon, lat))
-
-    if not puntos:
-        return None
-
-    cx = sum(p[0] for p in puntos) / len(puntos)
-    cy = sum(p[1] for p in puntos) / len(puntos)
-
-    return cx, cy
-
-def centrar_en_pais(screen, data, zoom, lon, lat):
-    WIDTH, HEIGHT = screen.get_size()
-    PADDING = 20
-
-    min_lon, min_lat = float("inf"), float("inf")
+def preprocesar_mapa(data):
+   
+    min_lon, min_lat =  float("inf"),  float("inf")
     max_lon, max_lat = float("-inf"), float("-inf")
 
-    def update_bounds(coords):
-        nonlocal min_lon, min_lat, max_lon, max_lat
-        for lo, la in coords:
-            min_lon = min(min_lon, lo)
-            min_lat = min(min_lat, la)
-            max_lon = max(max_lon, lo)
-            max_lat = max(max_lat, la)
+    poligonos = [] 
 
     for feature in data["features"]:
-        geom = feature["geometry"]
+        geom   = feature["geometry"]
+        nombre = feature["properties"].get("name", "")
+        rings  = []
+
         if geom["type"] == "Polygon":
-            for ring in geom["coordinates"]:
-                update_bounds(ring)
+            rings = geom["coordinates"]
         elif geom["type"] == "MultiPolygon":
-            for polygon in geom["coordinates"]:
-                for ring in polygon:
-                    update_bounds(ring)
+            for poly in geom["coordinates"]:
+                rings.extend(poly)
 
-    scale_x = (WIDTH - 2 * PADDING) / (max_lon - min_lon)
-    scale_y = (HEIGHT - 2 * PADDING) / (max_lat - min_lat)
-    scale = min(scale_x, scale_y)
+        for ring in rings:
+            coords = [(lon, lat) for lon, lat, *_ in ring]  
+            poligonos.append({"nombre": nombre, "coords": coords})
 
-    x = (lon - min_lon) * scale * zoom + PADDING
-    y = (max_lat - lat) * scale * zoom + PADDING
+            for lon, lat in coords:
+                if lon < min_lon: min_lon = lon
+                if lat < min_lat: min_lat = lat
+                if lon > max_lon: max_lon = lon
+                if lat > max_lat: max_lat = lat
 
-    offset_x = WIDTH // 2 - x
-    offset_y = HEIGHT // 2 - y
+    return {
+        "poligonos": poligonos,
+        "bounds": (min_lon, min_lat, max_lon, max_lat),
+    }
 
-    return offset_x, offset_y
-
-def dibujar_mapa(screen, data, zoom, offset_x, offset_y, terremotos=None):
+def limites_mapa(screen, mapa_pre, zoom):
     WIDTH, HEIGHT = screen.get_size()
-
-    COLOR_FONDO = (128, 128, 128)
-    COLOR_LINEA = (114, 114, 114)
-    COLOR_PAIS = (100, 100, 100)
-
     PADDING = 20
+    min_lon, min_lat, max_lon, max_lat = mapa_pre["bounds"]
 
-    font_pais = pygame.font.SysFont("ThisAppeal-FreeDemo", 14)
-    font_cont = pygame.font.SysFont("ThisAppeal-FreeDemo", 28)
-    font_quake = pygame.font.SysFont("ThisAppeal-FreeDemo", 20)
+    scale   = min((WIDTH  - 2*PADDING) / (max_lon - min_lon),
+                  (HEIGHT - 2*PADDING) / (max_lat - min_lat))
+    map_w   = (max_lon - min_lon) * scale * zoom
+    map_h   = (max_lat - min_lat) * scale * zoom
 
-    continentes = [
-        ("América del Norte", -100, 50),
-        ("América del Sur", -60, -20),
-        ("Europa", 10, 50),
-        ("África", 20, 0),
-        ("Asia", 90, 40),
-        ("Oceanía", 140, -25),
-        ("Antártida", 0, -45)
-    ]
+    return WIDTH - map_w - PADDING, PADDING, HEIGHT - map_h - PADDING, PADDING
 
-    min_lon, min_lat = float("inf"), float("inf")
-    max_lon, max_lat = float("-inf"), float("-inf")
+_cache_poligonos: dict = {}   
+_cache_key       = None
 
-    def update_bounds(coords):
-        nonlocal min_lon, min_lat, max_lon, max_lat
-        for lon, lat in coords:
-            min_lon = min(min_lon, lon)
-            min_lat = min(min_lat, lat)
-            max_lon = max(max_lon, lon)
-            max_lat = max(max_lat, lat)
+def _build_scale(screen, mapa_pre, zoom):
+    WIDTH, HEIGHT = screen.get_size()
+    PADDING = 20
+    min_lon, min_lat, max_lon, max_lat = mapa_pre["bounds"]
+    scale = min((WIDTH  - 2*PADDING) / (max_lon - min_lon),
+                (HEIGHT - 2*PADDING) / (max_lat - min_lat))
+    return scale, min_lon, max_lat
 
-    for feature in data["features"]:
-        geom = feature["geometry"]
-        if geom["type"] == "Polygon":
-            for ring in geom["coordinates"]:
-                update_bounds(ring)
-        elif geom["type"] == "MultiPolygon":
-            for polygon in geom["coordinates"]:
-                for ring in polygon:
-                    update_bounds(ring)
+def _transform(lon, lat, scale, zoom, min_lon, max_lat, offset_x, offset_y, PADDING=20):
+    x = (lon - min_lon) * scale * zoom + PADDING + offset_x
+    y = (max_lat - lat) * scale * zoom + PADDING + offset_y
+    return int(x), int(y)
 
-    scale_x = (WIDTH - 2 * PADDING) / (max_lon - min_lon)
-    scale_y = (HEIGHT - 2 * PADDING) / (max_lat - min_lat)
-    scale = min(scale_x, scale_y)
+def dibujar_mapa(screen, mapa_pre, zoom, offset_x, offset_y, terremotos=None):
+    global _cache_key
+
+    WIDTH, HEIGHT   = screen.get_size()
+    COLOR_FONDO     = (128, 128, 128)
+    COLOR_LINEA     = (114, 114, 114)
+    COLOR_PAIS      = (100, 100, 100)
+    PADDING         = 20
+
+    scale, min_lon, max_lat = _build_scale(screen, mapa_pre, zoom)
 
     def transform(lon, lat):
-        x = (lon - min_lon) * scale * zoom + PADDING + offset_x
-        y = (max_lat - lat) * scale * zoom + PADDING + offset_y
-        return int(x), int(y)
+        return _transform(lon, lat, scale, zoom, min_lon, max_lat,
+                          offset_x, offset_y, PADDING)
 
     screen.fill(COLOR_FONDO)
 
-    for feature in data["features"]:
-        geom = feature["geometry"]
+    cache_key = (round(zoom, 2), round(offset_x), round(offset_y), WIDTH, HEIGHT)
 
-        if geom["type"] == "Polygon":
-            for ring in geom["coordinates"]:
-                points = [transform(lon, lat) for lon, lat in ring]
-                pygame.draw.polygon(screen, COLOR_PAIS, points)
-                pygame.draw.polygon(screen, COLOR_LINEA, points, 1)
+    if cache_key != _cache_key or cache_key not in _cache_poligonos:
+        surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))
 
-        elif geom["type"] == "MultiPolygon":
-            for polygon in geom["coordinates"]:
-                for ring in polygon:
-                    points = [transform(lon, lat) for lon, lat in ring]
-                    pygame.draw.polygon(screen, COLOR_PAIS, points)
-                    pygame.draw.polygon(screen, COLOR_LINEA, points, 1)
+        screen_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
 
-    t = max(0, min(1, (zoom - 1.5) / 1.5))
+        for poly in mapa_pre["poligonos"]:
+            points = [transform(lon, lat) for lon, lat in poly["coords"]]
+
+            xs = [p[0] for p in points]
+            ys = [p[1] for p in points]
+            poly_rect = pygame.Rect(min(xs), min(ys),
+                                    max(xs)-min(xs), max(ys)-min(ys))
+            if not screen_rect.colliderect(poly_rect):
+                continue
+
+            if len(points) >= 3:
+                pygame.draw.polygon(surf, COLOR_PAIS,  points)
+                pygame.draw.polygon(surf, COLOR_LINEA, points, 1)
+
+        _cache_poligonos.clear()
+        _cache_poligonos[cache_key] = surf
+        _cache_key = cache_key
+
+    screen.blit(_cache_poligonos[cache_key], (0, 0))
+
+    font_cont  = pygame.font.SysFont("ThisAppeal-FreeDemo", 28)
+    font_pais  = pygame.font.SysFont("ThisAppeal-FreeDemo", 14)
+    font_quake = pygame.font.SysFont("ThisAppeal-FreeDemo", 20)
+    t = max(0.0, min(1.0, (zoom - 1.5) / 1.5))
     alpha_cont = int(255 * (1 - t))
     alpha_pais = int(255 * t)
 
-    if alpha_cont > 0:
-        surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    continentes = [
+        ("América del Norte", -100, 50),
+        ("América del Sur",    -60, -20),
+        ("Europa",              10,  50),
+        ("África",              20,   0),
+        ("Asia",                90,  40),
+        ("Oceanía",            140, -25),
+        ("Antártida",            0,  -80),
+    ]
 
+    if alpha_cont > 0:
+        surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         for nombre, lon, lat in continentes:
             x, y = transform(lon, lat)
-            text = font_cont.render(nombre, True, (200, 200, 200))
-            text.set_alpha(alpha_cont)
-            surface.blit(text, text.get_rect(center=(x, y)))
-
-        screen.blit(surface, (0, 0))
+            if not (0 <= x <= WIDTH and 0 <= y <= HEIGHT):
+                continue
+            text = font_cont.render(nombre, True, (200, 200, 200, alpha_cont))
+            surf.blit(text, text.get_rect(center=(x, y)))
+        screen.blit(surf, (0, 0))
 
     if alpha_pais > 0:
-        surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        surf     = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         dibujados = set()
 
-        for feature in data["features"]:
-            nombre = feature["properties"].get("name", "")
+        for poly in mapa_pre["poligonos"]:
+            nombre = poly["nombre"]
             if nombre in dibujados:
                 continue
             dibujados.add(nombre)
 
-            geom = feature["geometry"]
-            puntos = []
+            coords = poly["coords"]
+            n      = len(coords)
+            if n == 0:
+                continue
+            cx = sum(transform(lon, lat)[0] for lon, lat in coords) // n
+            cy = sum(transform(lon, lat)[1] for lon, lat in coords) // n
 
-            if geom["type"] == "Polygon":
-                for ring in geom["coordinates"]:
-                    for lon, lat in ring:
-                        puntos.append(transform(lon, lat))
-
-            elif geom["type"] == "MultiPolygon":
-                for polygon in geom["coordinates"]:
-                    for ring in polygon:
-                        for lon, lat in ring:
-                            puntos.append(transform(lon, lat))
-
-            if not puntos:
+            if not (0 <= cx <= WIDTH and 0 <= cy <= HEIGHT):
                 continue
 
-            cx = sum(p[0] for p in puntos) // len(puntos)
-            cy = sum(p[1] for p in puntos) // len(puntos)
+            text = font_pais.render(nombre, True, (180, 180, 180, alpha_pais))
+            surf.blit(text, (cx, cy))
 
-            text = font_pais.render(nombre, True, (180, 180, 180))
-            text.set_alpha(alpha_pais)
-            surface.blit(text, (cx, cy))
-
-        screen.blit(surface, (0, 0))
+        screen.blit(surf, (0, 0))
 
     if terremotos:
         mouse_x, mouse_y = pygame.mouse.get_pos()
+        hover_info = None
 
         for quake in terremotos:
             coords = quake["geometry"]["coordinates"]
-            mag = quake["properties"]["mag"]
-
+            mag    = quake["properties"].get("mag")
             if not mag or mag < 2:
                 continue
 
-            lon, lat = coords[0], coords[1]
-            x, y = transform(lon, lat)
+            x, y = transform(coords[0], coords[1])
 
-            if mag < 3:
-                color = (255, 255, 0)
-            elif mag < 5:
-                color = (255, 140, 0)
-            else:
-                color = (255, 0, 0)
+            if not (-10 <= x <= WIDTH+10 and -10 <= y <= HEIGHT+10):
+                continue
 
-            size = max(2, int(mag * 1.5))
+            color = (255, 255, 0) if mag < 3 else (255, 140, 0) if mag < 5 else (255, 0, 0)
+            size  = max(2, int(mag * 1.5))
             pygame.draw.circle(screen, color, (x, y), size)
 
-            if ((mouse_x - x)**2 + (mouse_y - y)**2)**0.5 < size + 5:
-                info = f"{quake['properties']['place']} | M{mag}"
-                text = font_quake.render(info, True, (0, 0, 0))
-                screen.blit(text, (mouse_x + 10, mouse_y + 10))
+            if hover_info is None:
+                dist = ((mouse_x-x)**2 + (mouse_y-y)**2)**0.5
+                if dist < size + 5:
+                    hover_info = f"{quake['properties']['place']} | M{mag}"
 
-data = cargar_mapa()
-terremotos = obtener_terremotos()
+        if hover_info:
+            text = font_quake.render(hover_info, True, (0, 0, 0))
+            screen.blit(text, (mouse_x + 10, mouse_y + 10))
 
-zoom = 1
-offset_x = 0
-offset_y = 0
+_terremotos_cache = []
+_lock             = threading.Lock()
 
-dragging = False
-last_mouse = (0, 0)
+def iniciar_descarga_terremotos():
+    def _loop():
+        import time
+        while True:
+            try:
+                data = requests.get(
+                    "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson",
+                    timeout=10
+                ).json()["features"]
+                with _lock:
+                    _terremotos_cache.clear()
+                    _terremotos_cache.extend(data)
+            except Exception:
+                pass
+            time.sleep(300)  
 
-buscando = False
-texto_busqueda = ""
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
 
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                dragging = True
-                last_mouse = pygame.mouse.get_pos()
-
-            elif event.button == 4:
-                zoom *= 1.1
-            elif event.button == 5:
-                zoom /= 1.1
-
-        elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                dragging = False
-
-        elif event.type == pygame.MOUSEMOTION and dragging:
-            mx, my = pygame.mouse.get_pos()
-            dx = mx - last_mouse[0]
-            dy = my - last_mouse[1]
-            offset_x += dx
-            offset_y += dy
-            last_mouse = (mx, my)
-
-        elif event.type == pygame.KEYDOWN:
-
-            if event.key == pygame.K_f:
-                buscando = True
-                texto_busqueda = ""
-
-            elif buscando:
-                if event.key == pygame.K_RETURN:
-                    pais = buscar_pais(data, texto_busqueda)
-
-                    if pais:
-                        centro = centro_pais(pais)
-                        if centro:
-                            lon, lat = centro
-                            offset_x, offset_y = centrar_en_pais(screen, data, zoom, lon, lat)
-
-                    buscando = False
-
-                elif event.key == pygame.K_BACKSPACE:
-                    texto_busqueda = texto_busqueda[:-1]
-
-                else:
-                    texto_busqueda += event.unicode
-
-    dibujar_mapa(screen, data, zoom, offset_x, offset_y, terremotos)
-
-    if buscando:
-        font_ui = pygame.font.SysFont("ThisAppeal-FreeDemo", 30)
-        texto = font_ui.render("Buscar: " + texto_busqueda, True, (255,255,255))
-        pygame.draw.rect(screen, (0,0,0), (10, 10, 400, 50))
-        screen.blit(texto, (20, 20))
-
-    pygame.display.flip()
-    clock.tick(60)
-
-pygame.quit()
+def get_terremotos():
+    with _lock:
+        return list(_terremotos_cache)

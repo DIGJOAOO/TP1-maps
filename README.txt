@@ -27,8 +27,15 @@ voy a seguir trabajando la UI
 me di un gustito (?)
 //
 Malvasio nos dejo codear en su hora
-arregle el codigo porque programe parte del mapa en el menu
+ordené el codigo porque programe parte del mapa en el menu
 me falta un  buscador y los oceanos para terminar el mapa
 intente armar un buscador en el mapa para los paises
 ahora no anda al menu
 no se q tenia q ver
+
+dia 5 haciendo la mejor app de mundi
+ian me optimizo el mapa
+aura
+arranque el api del github 
+no me sale el buscador de paises en el mapa
+creo que lo voy a omitir
