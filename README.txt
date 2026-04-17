@@ -38,4 +38,6 @@ ian me optimizo el mapa
 aura
 arranque el api del github 
 no me sale el buscador de paises en el mapa
-creo que lo voy a omitir
+creo que lo voy a omitir 
+
+esta bueno el trabajo bro seguí así
