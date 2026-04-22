@@ -154,7 +154,7 @@ def dibujar_mapa(screen, mapa_pre, zoom, offset_x, offset_y, terremotos=None):
         screen.blit(surf, (0, 0))
 
     if alpha_pais > 0:
-        surf     = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         dibujados = set()
 
         for poly in mapa_pre["poligonos"]:

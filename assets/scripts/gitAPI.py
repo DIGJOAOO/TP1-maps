@@ -81,6 +81,7 @@ def main():
     modo = "top"
     repos = obtener_top_repos(modo)
     anim = [0]*10
+    barras = []
 
     running = True
 
@@ -103,13 +104,15 @@ def main():
                     modo = "trending" if modo == "top" else "top"
                     repos = obtener_top_repos(modo)
                     anim = [0]*10
+                if event.key == pygame.K_ESCAPE:
+                    running = False
 
         screen.fill((128, 128, 128))
 
         titulo = font_big.render(f"GitHub {modo.upper()} REPOS", True, (114, 114, 114))
         screen.blit(titulo, (WIDTH//2 - 300, 40))
 
-        ayuda = font.render("T = cambiar Top/Trending | Click = abrir repo", True, (150,150,150))
+        ayuda = font.render("T = cambiar Top/Trending | Click = abrir repo | ESC = volver", True, (150,150,150))
         screen.blit(ayuda, (WIDTH//2 - 250, 100))
 
         barras = dibujar_barras(repos, anim, mouse)

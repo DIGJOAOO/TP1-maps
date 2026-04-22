@@ -35,7 +35,7 @@ exit_button = pygame.Rect(608, 600, 200, 50)
 basket_button = pygame.Rect(5, 5, 50, 50)
 
 estado = "menu"
-
+api_activo = False
 
 data_cruda = cargar_mapa()
 mapa_precalculado = preprocesar_mapa(data_cruda)
@@ -88,6 +88,7 @@ while True:
                     estado = "mapa"
                 elif api_button.collidepoint(event.pos):
                     estado = "api"
+                    api_activo = True
                 elif basket_button.collidepoint(event.pos):
                     webbrowser.open("https://poki.com/es/g/basketball-stars")
                 elif exit_button.collidepoint(event.pos):
@@ -145,7 +146,7 @@ while True:
                 x_pos = x + scroll_x
 
                 if (y // 200) % 2 == 1:
-                    x_pos += 100
+                     x_pos += 100
 
                 if ((x // 200) + (y // 200)) % 2 == 0:
                     screen.blit(icono_git, (x_pos, y))
@@ -161,10 +162,13 @@ while True:
 
     elif estado == "mapa":
         terremotos = get_terremotos()
-        
         dibujar_mapa(screen, mapa_precalculado, zoom, offset_x, offset_y, terremotos)
 
     elif estado == "api":
-        main()
+        if api_activo:
+            main()
+            api_activo = False
+            estado = "menu"
+
     pygame.display.flip()
-    clock.tick(60) 
+    clock.tick(60)
